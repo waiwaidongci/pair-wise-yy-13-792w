@@ -1,126 +1,103 @@
-import "./styles.css";
+import { useState } from "react";
+import { exportSessionsCsv, recalibrate, resetDemo, useStore } from "./archive/store";
+import { deltaE76 } from "./domain/color";
+import { effectiveStatus } from "./domain/rules";
+import type { LightBoxId } from "./domain/types";
+import { BatchList } from "./ui/BatchList";
+import { BatchDetail } from "./ui/BatchDetail";
+import { ReevalConsole } from "./ui/ReevalConsole";
+import { MetricsBar, Sidebar, type Filters } from "./ui/Sidebar";
+import { LabFields } from "./ui/controls";
 
-const project = {
-  "sourceNo": 7,
-  "id": "hxyfront-62012",
-  "port": 62012,
-  "title": "纺织染整小样管理",
-  "domain": "纺织染整",
-  "prompt": "我需要一个纺织染整实验室的小样管理前端系统，可以记录面料成分、克重、染料配方、浴比、温度曲线、保温时间、后整理方式、色差值和评审结果。页面需要有小样批次列表、配方比例展示、Lab色差对比、工艺曲线摘要和按客户订单筛选。",
-  "palette": [
-    "#be123c",
-    "#4f46e5",
-    "#16a34a"
-  ],
-  "metrics": [
-    "小样批次",
-    "色差超限",
-    "客户订单",
-    "通过率"
-  ],
-  "filters": [
-    "棉",
-    "涤纶",
-    "锦纶",
-    "混纺"
-  ],
-  "fields": [
-    "面料成分",
-    "克重",
-    "染料配方",
-    "浴比",
-    "保温时间",
-    "色差值"
-  ],
-  "records": [
-    [
-      "LAB-620A",
-      "棉府绸120g",
-      "ΔE 0.84",
-      "评审通过"
-    ],
-    [
-      "LAB-621C",
-      "涤纶针织",
-      "升温曲线偏快",
-      "待复染"
-    ],
-    [
-      "LAB-624B",
-      "混纺斜纹",
-      "后整理柔软剂2%",
-      "客户确认中"
-    ]
-  ]
-};
+const DEFAULT_FILTERS: Filters = { composition: "全部", orderOnly: false, status: "全部" };
+
+function RecalibrateModal(props: { boxId: LightBoxId; onClose: () => void }) {
+  const box = useStore((s) => s.calibrations.find((c) => c.boxId === props.boxId)!);
+  const [measured, setMeasured] = useState({ ...box.nominal });
+  const de = deltaE76(box.nominal, measured);
+  const valid = de <= box.tileToleranceDE;
+
+  return (
+    <div className="modal-mask" onClick={props.onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2>重新校准 {box.boxId}</h2>
+        <p className="side-note">登记本次白度板实测读数，校准有效期从今天重新起算。</p>
+        <LabFields label="白度板实测 Lab" value={measured} onValue={setMeasured} compact />
+        <p className={valid ? "de-ok" : "de-over"} style={{ fontWeight: 700 }}>
+          与标称值 ΔE {de.toFixed(2)}，允差 {box.tileToleranceDE}
+          {valid ? "，读数合格" : "，读数仍越限"}
+        </p>
+        <div className="revise-actions">
+          <button onClick={props.onClose}>取消</button>
+          <button
+            className="primary"
+            disabled={!valid}
+            onClick={() => {
+              recalibrate(box.boxId, measured);
+              props.onClose();
+            }}
+          >
+            确认校准
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function App() {
+  const batches = useStore((s) => s.batches);
+  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [selectedId, setSelectedId] = useState(batches[0]?.id ?? "");
+  const [calBox, setCalBox] = useState<LightBoxId | null>(null);
+
+  const selected = batches.find((b) => b.id === selectedId) ?? batches[0];
+
   return (
     <main className="app">
       <section className="hero">
-        <p>{project.id} · 源提示词{project.sourceNo} · Port {project.port}</p>
-        <h1>{project.title}</h1>
-        <span>{project.prompt}</span>
+        <p>hxyfront-62012 · 源提示词7 · Port 62012</p>
+        <h1>纺织染整 · 色差复评台</h1>
+        <span>
+          先选灯箱并登记标准板读数与环境温湿度；校准过期或读数越限只留待校色。两名评色员同箱分别测量，色差均不高于
+          0.8 且结论一致方可通过，结论不一致进入仲裁并保留两份原始记录。配方、后整理或克重修改后通过状态自动重新判定，历史版本随时可查。
+        </span>
       </section>
 
-      <section className="metrics">
-        {project.metrics.map((metric: string, index: number) => (
-          <article key={metric}>
-            <small>{metric}</small>
-            <strong>{[28, 6, 14, 91][index] ?? 10}</strong>
-          </article>
-        ))}
-      </section>
+      <MetricsBar />
 
-      <section className="workspace">
-        <aside className="panel">
-          <h2>{project.domain}分类</h2>
-          <div className="chips">
-            {project.filters.map((item: string) => (
-              <button key={item}>{item}</button>
-            ))}
-          </div>
-        </aside>
-
-        <section className="panel form-panel">
-          <div className="heading">
-            <div>
-              <p>专业字段</p>
-              <h2>新增记录</h2>
-            </div>
-            <button className="primary">保存记录</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
-
-      <section className="panel">
-        <div className="heading">
-          <div>
-            <p>近期记录</p>
-            <h2>工作台摘要</h2>
-          </div>
-          <button>导出CSV</button>
-        </div>
-        <div className="records">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")}>
-              <b>{String(index + 1).padStart(2, "0")}</b>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
+      <section className="workspace work-layout">
+        <Sidebar
+          filters={filters}
+          onChange={setFilters}
+          onReset={resetDemo}
+          onRecalibrate={(id) => setCalBox(id)}
+        />
+        <div className="main-col">
+          <BatchList
+            filters={filters}
+            selectedId={selected?.id ?? ""}
+            onSelect={setSelectedId}
+            onExport={exportSessionsCsv}
+          />
+          {selected ? (
+            <>
+              <ReevalConsole key={selected.id} batch={selected} />
+              <BatchDetail batch={selected} />
+            </>
+          ) : (
+            <section className="panel">
+              <p className="empty-hint">当前筛选下没有批次。</p>
+            </section>
+          )}
         </div>
       </section>
+
+      <footer className="foot">
+        判定（领域规则）· 存档（状态与历史版本）· 页面交互三层分离 · 批次列表、超限数与 Lab 对比随登记/改版同步更新
+      </footer>
+
+      {calBox ? <RecalibrateModal boxId={calBox} onClose={() => setCalBox(null)} /> : null}
     </main>
   );
 }
