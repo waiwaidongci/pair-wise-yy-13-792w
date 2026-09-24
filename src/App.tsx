@@ -1,126 +1,98 @@
+import { useMemo, useState } from "react";
 import "./styles.css";
-
-const project = {
-  "sourceNo": 7,
-  "id": "hxyfront-62012",
-  "port": 62012,
-  "title": "纺织染整小样管理",
-  "domain": "纺织染整",
-  "prompt": "我需要一个纺织染整实验室的小样管理前端系统，可以记录面料成分、克重、染料配方、浴比、温度曲线、保温时间、后整理方式、色差值和评审结果。页面需要有小样批次列表、配方比例展示、Lab色差对比、工艺曲线摘要和按客户订单筛选。",
-  "palette": [
-    "#be123c",
-    "#4f46e5",
-    "#16a34a"
-  ],
-  "metrics": [
-    "小样批次",
-    "色差超限",
-    "客户订单",
-    "通过率"
-  ],
-  "filters": [
-    "棉",
-    "涤纶",
-    "锦纶",
-    "混纺"
-  ],
-  "fields": [
-    "面料成分",
-    "克重",
-    "染料配方",
-    "浴比",
-    "保温时间",
-    "色差值"
-  ],
-  "records": [
-    [
-      "LAB-620A",
-      "棉府绸120g",
-      "ΔE 0.84",
-      "评审通过"
-    ],
-    [
-      "LAB-621C",
-      "涤纶针织",
-      "升温曲线偏快",
-      "待复染"
-    ],
-    [
-      "LAB-624B",
-      "混纺斜纹",
-      "后整理柔软剂2%",
-      "客户确认中"
-    ]
-  ]
-};
+import { AssessmentPanel } from "./components/AssessmentPanel";
+import { BatchDetail } from "./components/BatchDetail";
+import { BatchList } from "./components/BatchList";
+import { LightBoxPanel } from "./components/LightBoxPanel";
+import { MetricsBar } from "./components/MetricsBar";
+import { NewBatchButton } from "./components/NewBatchButton";
+import { actions, useStation } from "./lab/store";
 
 function App() {
+  const state = useStation();
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(
+    state.batches[0]?.id ?? null
+  );
+  const [selectedBoxId, setSelectedBoxId] = useState<string>(
+    state.boxes[0]?.id ?? "box-d65"
+  );
+
+  const boxIdMap = useMemo(
+    () => Object.fromEntries(state.boxes.map((b) => [b.id, b])),
+    [state.boxes]
+  );
+
+  const selectedBatch =
+    state.batches.find((b) => b.id === selectedBatchId) ?? null;
+  const selectedBox = boxIdMap[selectedBoxId] ?? state.boxes[0];
+  const selectedCalibration = state.calibrations.find(
+    (c) => c.boxId === selectedBox?.id
+  );
+
   return (
     <main className="app">
       <section className="hero">
-        <p>{project.id} · 源提示词{project.sourceNo} · Port {project.port}</p>
-        <h1>{project.title}</h1>
-        <span>{project.prompt}</span>
+        <p>hxyfront-62012 · 染整实验室 · 色差复评台</p>
+        <h1>色差复评台</h1>
+        <span>
+          连续评样流程：选灯箱 → 登记标准板读数与温湿度（校准过期/读数越限只留待校色）→
+          两名评色员同灯箱分别测量，ΔE 均 ≤ 0.8 且结论一致才通过；不一致进入仲裁，两份原始记录均保留。
+          配方 / 后整理 / 克重修改后通过状态自动重判，历史版本完整可查。
+        </span>
       </section>
 
-      <section className="metrics">
-        {project.metrics.map((metric: string, index: number) => (
-          <article key={metric}>
-            <small>{metric}</small>
-            <strong>{[28, 6, 14, 91][index] ?? 10}</strong>
-          </article>
-        ))}
-      </section>
+      <MetricsBar batches={state.batches} />
 
       <section className="workspace">
-        <aside className="panel">
-          <h2>{project.domain}分类</h2>
-          <div className="chips">
-            {project.filters.map((item: string) => (
-              <button key={item}>{item}</button>
-            ))}
-          </div>
+        <aside className="side">
+          <LightBoxPanel
+            boxes={state.boxes}
+            calibrations={state.calibrations}
+            selectedBoxId={selectedBox?.id}
+            onSelect={setSelectedBoxId}
+          />
         </aside>
 
-        <section className="panel form-panel">
-          <div className="heading">
-            <div>
-              <p>专业字段</p>
-              <h2>新增记录</h2>
-            </div>
-            <button className="primary">保存记录</button>
+        <div className="main-col">
+          {/* key 同时绑定批次与灯箱：切换即清空草稿，避免把上一块布的数据带进新评色 */}
+          <AssessmentPanel
+            key={`${selectedBatch?.id ?? "none"}-${selectedBox?.id}`}
+            batch={selectedBatch}
+            box={selectedBox}
+            calibration={selectedCalibration}
+          />
+          {selectedBatch && (
+            <BatchDetail batch={selectedBatch} boxIdMap={boxIdMap} />
+          )}
+        </div>
+
+        <aside className="side">
+          <BatchList
+            batches={state.batches}
+            selectedId={selectedBatchId}
+            onSelect={setSelectedBatchId}
+          />
+          <div className="panel">
+            <NewBatchButton onCreated={setSelectedBatchId} />
+            <button
+              className="link-btn reset"
+              onClick={() => {
+                if (window.confirm("恢复演示台账？当前改动将被清除。")) {
+                  actions.resetDemo();
+                  setSelectedBatchId(null);
+                }
+              }}
+            >
+              恢复演示数据
+            </button>
           </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
+        </aside>
       </section>
 
-      <section className="panel">
-        <div className="heading">
-          <div>
-            <p>近期记录</p>
-            <h2>工作台摘要</h2>
-          </div>
-          <button>导出CSV</button>
-        </div>
-        <div className="records">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")}>
-              <b>{String(index + 1).padStart(2, "0")}</b>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      <footer className="foot">
+        判定规则（src/lab/decide.ts）、存档与版本（src/lab/archive.ts）、页面交互（src/components）分层独立；
+        批次列表、超限数、Lab 对比均由同一份台账派生，写入后同步更新。
+      </footer>
     </main>
   );
 }
